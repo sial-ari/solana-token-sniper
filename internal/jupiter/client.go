@@ -9,7 +9,7 @@ import (
 
     "github.com/sial-ari/solana-token-sniper/internal/db"
     "github.com/sial-ari/solana-token-sniper/internal/models"
-    "github.com/jup-ag/jupiter-go/jupiter"
+    "github.com/ilkamo/jupiter-go/jupiter"
 )
 
 // Client manages Jupiter API interactions and price monitoring
