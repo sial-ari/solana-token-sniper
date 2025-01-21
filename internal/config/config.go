@@ -1,51 +1,39 @@
-// internal/config/config.go
 package config
 
 import (
 	"os"
-	"encoding/json"
+	"strconv"
 )
 
 type Config struct {
-	// Solana configuration
-	SolanaRPC string `json:"solana_rpc"`
-
-	// Jupiter configuration
-	JupiterAPIEndpoint string `json:"jupiter_api_endpoint"`
-
-	// Database configuration
-	DatabasePath string `json:"database_path"`
-
-	// Trading configuration
-	WalletPrivateKey string `json:"wallet_private_key"`
-	DryRun           bool   `json:"dry_run"`
-
-	// Scanning configuration
-	ScanInterval     int    `json:"scan_interval"`
-	ProfitThreshold  float64 `json:"profit_threshold"`
-
-	// Telegram configuration
-	TelegramToken    string `json:"telegram_token"`
-	TelegramChatID   int64  `json:"telegram_chat_id"`
+	WebsocketURL     string
+	QueueSize        int
+	QuoteInterval    int
+	DatabasePath     string
+	TelegramToken    string
+	SolanaRPCURL     string
+	DryRun           bool
 }
 
-func LoadConfig(path string) (*Config, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
+func LoadConfig() (*Config, error) {
+	queueSize, _ := strconv.Atoi(getEnvWithDefault("QUEUE_SIZE", "5"))
+	quoteInterval, _ := strconv.Atoi(getEnvWithDefault("QUOTE_INTERVAL", "30"))
 
-	var config Config
-	decoder := json.NewDecoder(file)
-	err = decoder.Decode(&config)
-	if err != nil {
-		return nil, err
-	}
-
-	return &config, nil
+	return &Config{
+		WebsocketURL:  getEnvWithDefault("WEBSOCKET_URL", "wss://pumpportal.fun/api/data"),
+		QueueSize:     queueSize,
+		QuoteInterval: quoteInterval,
+		DatabasePath:  getEnvWithDefault("DATABASE_PATH", "tokens.db"),
+		TelegramToken: os.Getenv("TELEGRAM_TOKEN"),
+		SolanaRPCURL:  getEnvWithDefault("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com"),
+		DryRun:        os.Getenv("DRY_RUN") == "true",
+	}, nil
 }
 
-func (c *Config) IsDryRun() bool {
-	return c.DryRun
+func getEnvWithDefault(key, defaultValue string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	return value
 }
