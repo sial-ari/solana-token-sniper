@@ -33,7 +33,38 @@ func NewDatabase(path string, l *logger.Logger) (*Database, error) {
 	}, nil
 }
 
-// ... (createTables function remains the same)
+func createTables(db *sql.DB) error {
+    // Create tokens table
+    _, err := db.Exec(`
+        CREATE TABLE IF NOT EXISTS tokens (
+            address TEXT PRIMARY KEY,
+            name TEXT,
+            symbol TEXT,
+            created_at DATETIME,
+            initial_price REAL
+        )
+    `)
+    if err != nil {
+        return err
+    }
+
+    // Create price_records table
+    _, err = db.Exec(`
+        CREATE TABLE IF NOT EXISTS price_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            token_address TEXT,
+            price REAL,
+            timestamp DATETIME,
+            profit_loss REAL,
+            FOREIGN KEY(token_address) REFERENCES tokens(address)
+        )
+    `)
+    if err != nil {
+        return err
+    }
+
+    return nil
+}
 
 func (db *Database) AddToken(token Token) error {
 	operation := db.logger.TimeOperation("AddToken")
