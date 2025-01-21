@@ -1,172 +1,167 @@
-// internal/database/database.go
-package database
+package db
 
 import (
-	"database/sql"
-	_ "github.com/mattn/go-sqlite3"
-	"time"
-	"github.com/sial-ari/solana-token-sniper/internal/logger"
+    "database/sql"
+    "time"
+    _ "github.com/mattn/go-sqlite3"
+    "github.com/sial-ari/solana-token-sniper/internal/models"
 )
 
 type Database struct {
-	db     *sql.DB
-	logger *logger.Logger
+    db *sql.DB
 }
 
-// ... (previous Token and PriceRecord structs remain the same)
+// Initialize creates a new database connection and sets up the schema
+func Initialize(dbPath string) (*Database, error) {
+    db, err := sql.Open("sqlite3", dbPath)
+    if err != nil {
+        return nil, err
+    }
 
-func NewDatabase(path string, l *logger.Logger) (*Database, error) {
-	db, err := sql.Open("sqlite3", path)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create tables if they don't exist
-	err = createTables(db)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Database{
-		db:     db,
-		logger: l,
-	}, nil
-}
-
-func createTables(db *sql.DB) error {
-    // Create tokens table
-    _, err := db.Exec(`
+    // Create tables if they don't exist
+    _, err = db.Exec(`
         CREATE TABLE IF NOT EXISTS tokens (
-            address TEXT PRIMARY KEY,
+            mint TEXT PRIMARY KEY,
             name TEXT,
             symbol TEXT,
-            created_at DATETIME,
-            initial_price REAL
-        )
-    `)
-    if err != nil {
-        return err
-    }
+            bonding_curve_key TEXT,
+            initial_buy REAL,
+            market_cap_sol REAL,
+            signature TEXT,
+            sol_amount REAL,
+            trader_public_key TEXT,
+            tx_type TEXT,
+            uri TEXT,
+            v_sol_in_bonding_curve REAL,
+            v_tokens_in_bonding_curve REAL,
+            created_at DATETIME
+        );
 
-    // Create price_records table
-    _, err = db.Exec(`
-        CREATE TABLE IF NOT EXISTS price_records (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            token_address TEXT,
+        CREATE TABLE IF NOT EXISTS price_history (
+            mint TEXT,
             price REAL,
             timestamp DATETIME,
+            PRIMARY KEY (mint, timestamp),
+            FOREIGN KEY (mint) REFERENCES tokens(mint)
+        );
+
+        CREATE TABLE IF NOT EXISTS profit_loss (
+            mint TEXT PRIMARY KEY,
+            initial_price REAL,
+            current_price REAL,
             profit_loss REAL,
-            FOREIGN KEY(token_address) REFERENCES tokens(address)
-        )
+            profit_loss_pct REAL,
+            last_updated DATETIME,
+            FOREIGN KEY (mint) REFERENCES tokens(mint)
+        );
     `)
+
     if err != nil {
-        return err
+        return nil, err
     }
 
-    return nil
+    return &Database{db: db}, nil
 }
 
-func (db *Database) AddToken(token Token) error {
-	operation := db.logger.TimeOperation("AddToken")
-	defer operation.End()
-
-	_, err := db.db.Exec(`
-		INSERT INTO tokens (address, name, symbol, created_at, initial_price)
-		VALUES (?, ?, ?, ?, ?)
-	`, token.Address, token.Name, token.Symbol, token.CreatedAt, token.InitialPrice)
-
-	if err != nil {
-		db.logger.Error(fmt.Sprintf("Failed to add token %s: %v", token.Address, err))
-	}
-
-	return err
+// SaveNewToken stores a new token in the database
+func (d *Database) SaveNewToken(token *models.NewToken) error {
+    _, err := d.db.Exec(`
+        INSERT INTO tokens (
+            mint, name, symbol, bonding_curve_key, initial_buy, 
+            market_cap_sol, signature, sol_amount, trader_public_key,
+            tx_type, uri, v_sol_in_bonding_curve, v_tokens_in_bonding_curve,
+            created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        token.Mint, token.Name, token.Symbol, token.BondingCurveKey,
+        token.InitialBuy, token.MarketCapSol, token.Signature,
+        token.SolAmount, token.TraderPublicKey, token.TxType,
+        token.URI, token.VSolInBondingCurve, token.VTokensInBondingCurve,
+        time.Now(),
+    )
+    return err
 }
 
-func (db *Database) AddPriceRecord(record PriceRecord) error {
-	operation := db.logger.TimeOperation("AddPriceRecord")
-	defer operation.End()
-
-	_, err := db.db.Exec(`
-		INSERT INTO price_records (token_address, price, timestamp, profit_loss)
-		VALUES (?, ?, ?, ?)
-	`, record.TokenAddress, record.Price, record.Timestamp, record.ProfitLoss)
-
-	if err != nil {
-		db.logger.Error(fmt.Sprintf("Failed to add price record for token %s: %v", record.TokenAddress, err))
-	}
-
-	return err
+// SaveTokenPrice stores a new price point for a token
+func (d *Database) SaveTokenPrice(price *models.TokenPrice) error {
+    _, err := d.db.Exec(`
+        INSERT INTO price_history (mint, price, timestamp)
+        VALUES (?, ?, ?)`,
+        price.Mint, price.Price, price.Timestamp,
+    )
+    return err
 }
 
-func (db *Database) GetTokens() ([]Token, error) {
-	operation := db.logger.TimeOperation("GetTokens")
-	defer operation.End()
-
-	rows, err := db.db.Query(`SELECT * FROM tokens`)
-	if err != nil {
-		db.logger.Error(fmt.Sprintf("Failed to query tokens: %v", err))
-		return nil, err
-	}
-	defer rows.Close()
-
-	var tokens []Token
-	for rows.Next() {
-		var token Token
-		err := rows.Scan(&token.Address, &token.Name, &token.Symbol, &token.CreatedAt, &token.InitialPrice)
-		if err != nil {
-			db.logger.Error(fmt.Sprintf("Failed to scan token row: %v", err))
-			return nil, err
-		}
-		tokens = append(tokens, token)
-	}
-	return tokens, nil
+// UpdateProfitLoss updates the profit/loss calculation for a token
+func (d *Database) UpdateProfitLoss(pl *models.TokenProfitLoss) error {
+    _, err := d.db.Exec(`
+        INSERT OR REPLACE INTO profit_loss (
+            mint, initial_price, current_price, profit_loss,
+            profit_loss_pct, last_updated
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+        pl.Mint, pl.InitialPrice, pl.CurrentPrice,
+        pl.ProfitLoss, pl.ProfitLossPct, pl.LastUpdated,
+    )
+    return err
 }
 
-func (db *Database) GetPriceHistory(tokenAddress string) ([]PriceRecord, error) {
-	operation := db.logger.TimeOperation("GetPriceHistory")
-	defer operation.End()
+// GetTokensInQueue retrieves the most recent tokens up to the queue size
+func (d *Database) GetTokensInQueue(queueSize int) ([]models.NewToken, error) {
+    rows, err := d.db.Query(`
+        SELECT mint, name, symbol, bonding_curve_key, initial_buy,
+               market_cap_sol, signature, sol_amount, trader_public_key,
+               tx_type, uri, v_sol_in_bonding_curve, v_tokens_in_bonding_curve,
+               created_at
+        FROM tokens
+        ORDER BY created_at DESC
+        LIMIT ?`,
+        queueSize,
+    )
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
 
-	rows, err := db.db.Query(`
-		SELECT token_address, price, timestamp, profit_loss
-		FROM price_records
-		WHERE token_address = ?
-		ORDER BY timestamp DESC
-	`, tokenAddress)
-	if err != nil {
-		db.logger.Error(fmt.Sprintf("Failed to query price history for token %s: %v", tokenAddress, err))
-		return nil, err
-	}
-	defer rows.Close()
-
-	var records []PriceRecord
-	for rows.Next() {
-		var record PriceRecord
-		err := rows.Scan(&record.TokenAddress, &record.Price, &record.Timestamp, &record.ProfitLoss)
-		if err != nil {
-			db.logger.Error(fmt.Sprintf("Failed to scan price record row: %v", err))
-			return nil, err
-		}
-		records = append(records, record)
-	}
-	return records, nil
+    var tokens []models.NewToken
+    for rows.Next() {
+        var t models.NewToken
+        err := rows.Scan(
+            &t.Mint, &t.Name, &t.Symbol, &t.BondingCurveKey,
+            &t.InitialBuy, &t.MarketCapSol, &t.Signature,
+            &t.SolAmount, &t.TraderPublicKey, &t.TxType,
+            &t.URI, &t.VSolInBondingCurve, &t.VTokensInBondingCurve,
+            &t.CreatedAt,
+        )
+        if err != nil {
+            return nil, err
+        }
+        tokens = append(tokens, t)
+    }
+    return tokens, nil
 }
 
-// Add performance analysis methods
-func (db *Database) GetAverageQueryTime(operationType string, timeWindow time.Duration) (time.Duration, error) {
-	operation := db.logger.TimeOperation("GetAverageQueryTime")
-	defer operation.End()
+// GetPriceHistory retrieves the price history for a specific token
+func (d *Database) GetPriceHistory(mint string) ([]models.TokenPrice, error) {
+    rows, err := d.db.Query(`
+        SELECT price, timestamp
+        FROM price_history
+        WHERE mint = ?
+        ORDER BY timestamp DESC`,
+        mint,
+    )
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
 
-	var avgTime float64
-	err := db.db.QueryRow(`
-		SELECT AVG(elapsed_time)
-		FROM operation_logs
-		WHERE operation_type = ?
-		AND timestamp > datetime('now', '-' || ? || ' seconds')
-	`, operationType, int(timeWindow.Seconds())).Scan(&avgTime)
-
-	if err != nil {
-		return 0, err
-	}
-
-	return time.Duration(avgTime) * time.Millisecond, nil
+    var prices []models.TokenPrice
+    for rows.Next() {
+        var p models.TokenPrice
+        p.Mint = mint
+        err := rows.Scan(&p.Price, &p.Timestamp)
+        if err != nil {
+            return nil, err
+        }
+        prices = append(prices, p)
+    }
+    return prices, nil
 }
