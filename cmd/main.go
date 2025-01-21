@@ -1,47 +1,52 @@
-// cmd/sniper/main.go
 package main
 
 import (
     "context"
-    "flag"
-	"fmt"
+    "log"
     "os"
     "os/signal"
     "syscall"
 
-    "github.com/sial-ari/solana-token-sniper/internal/scanner"
-	"github.com/sial-ari/solana-token-sniper/internal/logger"
+    "github.com/sial-ari/solana-token-sniper/internal/config"
+    "github.com/sial-ari/solana-token-sniper/internal/db"
+    "github.com/sial-ari/solana-token-sniper/internal/websocket"
 )
 
 func main() {
-    // Parse command line flags
-    configPath := flag.String("config", "config.json", "Path to configuration file")
-    flag.Parse()
-
-    // Initialize logger
-    log, err := logger.NewLogger("logs/sniper.log")
+    // Load configuration
+    cfg, err := config.LoadConfig()
     if err != nil {
-        panic(fmt.Sprintf("Failed to initialize logger: %v", err))
-    }
-    defer log.Close()
-
-    // Initialize scanner
-    tokenScanner := scanner.NewScanner(log)
-
-    // Start the scanner
-    if err := tokenScanner.Start(); err != nil {
-        log.Error(fmt.Sprintf("Failed to start scanner: %v", err))
-        os.Exit(1)
+        log.Fatalf("Failed to load config: %v", err)
     }
 
-    // Handle shutdown signals
+    // Initialize database
+    database, err := db.Initialize(cfg.DatabasePath)
+    if err != nil {
+        log.Fatalf("Failed to initialize database: %v", err)
+    }
+
+    // Create WebSocket client
+    wsClient := websocket.NewClient(cfg.WebsocketURL, database, cfg.QueueSize)
+
+    // Set up context with cancellation
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+
+    // Handle graceful shutdown
     sigChan := make(chan os.Signal, 1)
     signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
+    // Connect to WebSocket server
+    if err := wsClient.Connect(ctx); err != nil {
+        log.Fatalf("Failed to connect to WebSocket server: %v", err)
+    }
+
     // Wait for shutdown signal
     <-sigChan
-    log.Info("Shutdown signal received, stopping scanner...")
+    log.Println("Shutting down...")
     
-    // Graceful shutdown
-    tokenScanner.Stop()
+    // Close WebSocket connection
+    if err := wsClient.Close(); err != nil {
+        log.Printf("Error closing WebSocket connection: %v", err)
+    }
 }
