@@ -8,9 +8,9 @@ import (
     "os/signal"
     "syscall"
 
-    "github.com/yourusername/solana-token-sniper/internal/scanner"
-    "github.com/yourusername/solana-token-sniper/internal/metrics"
-    "github.com/yourusername/solana-token-sniper/internal/logger"
+    "github.com/sial-ari/solana-token-sniper/internal/scanner"
+    "github.com/sial-ari/solana-token-sniper/internal/metrics"
+    "github.com/sial-ari/solana-token-sniper/internal/logger"
 )
 
 func main() {
