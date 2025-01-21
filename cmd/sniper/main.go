@@ -4,13 +4,13 @@ package main
 import (
     "context"
     "flag"
+	"fmt"
     "os"
     "os/signal"
     "syscall"
 
     "github.com/sial-ari/solana-token-sniper/internal/scanner"
-    "github.com/sial-ari/solana-token-sniper/internal/metrics"
-    "github.com/sial-ari/solana-token-sniper/internal/logger"
+	"github.com/sial-ari/solana-token-sniper/internal/logger"
 )
 
 func main() {
@@ -25,20 +25,8 @@ func main() {
     }
     defer log.Close()
 
-    // Initialize metrics client
-    metrics, err := metrics.NewMetricsClient(
-        context.Background(),
-        os.Getenv("DATABASE_URL"),
-        log,
-    )
-    if err != nil {
-        log.Error(fmt.Sprintf("Failed to initialize metrics client: %v", err))
-        os.Exit(1)
-    }
-    defer metrics.Close()
-
     // Initialize scanner
-    tokenScanner := scanner.NewScanner(metrics, log)
+    tokenScanner := scanner.NewScanner(log)
 
     // Start the scanner
     if err := tokenScanner.Start(); err != nil {

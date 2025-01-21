@@ -8,7 +8,6 @@ import (
     "sync"
     "time"
     "github.com/gorilla/websocket"
-    "github.com/sial-ari/solana-token-sniper/internal/metrics"
     "github.com/sial-ari/solana-token-sniper/internal/logger"
 )
 
@@ -40,8 +39,7 @@ type TokenMetrics struct {
 // Scanner manages the WebSocket connection and token event processing
 type Scanner struct {
     conn          *websocket.Conn
-    metrics       *metrics.MetricsClient
-    logger        *logger.Logger
+	logger        *logger.Logger
     mutex         sync.RWMutex
     isRunning     bool
     ctx           context.Context
@@ -52,11 +50,10 @@ type Scanner struct {
     minLiquidity  float64                 // Minimum liquidity threshold in SOL
 }
 
-func NewScanner(metricsClient *metrics.MetricsClient, logger *logger.Logger, minMarketCap, minLiquidity float64) *Scanner {
+func NewScanner(logger *logger.Logger, minMarketCap, minLiquidity float64) *Scanner {
     ctx, cancel := context.WithCancel(context.Background())
     return &Scanner{
-        metrics:      metricsClient,
-        logger:       logger,
+		logger:       logger,
         ctx:          ctx,
         cancel:       cancel,
         reconnectCh:  make(chan struct{}, 1),
